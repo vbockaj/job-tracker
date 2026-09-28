@@ -1,6 +1,6 @@
 # Job Application Tracker
 
-A simple web app for tracking job applications — company, role, status, and next steps.
+A simple web app for tracking job applications - company, role, status, and next steps.
 
 ## Features
 
@@ -14,10 +14,10 @@ A simple web app for tracking job applications — company, role, status, and ne
 
 ## Tech stack and why
 
-- **React** for the frontend — easy to build the form, table, and Kanban views as reusable pieces.
-- **Node.js + Express** for the backend — simple to set up, same language as the frontend.
-- **SQLite** for the database — no separate setup needed, good for a small project.
-- **JWT + bcrypt** for login — keeps users signed in and passwords stored safely.
+- **React** for the frontend - easy to build the form, table, and Kanban views as reusable pieces.
+- **Node.js + Express** for the backend - simple to set up, same language as the frontend.
+- **SQLite** for the database - no separate setup needed, good for a small project.
+- **JWT + bcrypt** for login - keeps users signed in and passwords stored safely.
 
 ## How to run
 
