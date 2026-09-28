@@ -1,0 +1,54 @@
+.container { 
+  max-width: 1000px; 
+  margin: 0 auto; 
+  padding: 20px; 
+  font-family: sans-serif; 
+}
+
+.summary { 
+  display: flex; 
+  gap: 16px; 
+  flex-wrap: wrap; 
+  margin-bottom: 16px; 
+}
+.form, .filters { 
+  display: flex; 
+  gap: 8px; 
+  flex-wrap: wrap; 
+  margin-bottom: 16px;
+}
+
+input, select, button { 
+  padding: 6px 10px; 
+}
+
+table { 
+  width: 100%; 
+  border-collapse: collapse; 
+}
+th, td { 
+  text-align: left; 
+  padding: 8px; 
+  border-bottom: 1px solid #ddd; 
+}
+.badge { 
+  background: #f5a623; 
+  color: #000; 
+  padding: 2px 6px; 
+  border-radius: 4px; 
+  margin-left: 8px; 
+  font-size: 12px; 
+}
+
+.row-offer { 
+  background: #d4f5d4; 
+}
+
+.row-interview { 
+  background: #fff5c2; 
+}
+
+.row-rejected { 
+  background: #eee; 
+  color: #777; 
+}
