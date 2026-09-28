@@ -1,40 +1,129 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const Database = require("better-sqlite3");
 const path = require("path");
 
 const app = express();
 const PORT = 3001;
-const DATA_FILE = path.join(__dirname, "data.json");
+const JWT_SECRET = "replace-this-with-a-long-random-string";
+const db = new Database(path.join(__dirname, "applications.db"));
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    passwordHash TEXT NOT NULL,
+    createdAt TEXT NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS applications (
+    id TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    company TEXT NOT NULL,
+    role TEXT NOT NULL,
+    link TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    dateApplied TEXT,
+    status TEXT DEFAULT 'Applied',
+    nextStep TEXT DEFAULT '',
+    nextStepDate TEXT DEFAULT '',
+    contact TEXT DEFAULT '',
+    cvVersion TEXT DEFAULT '',
+    notes TEXT DEFAULT ''
+  )
+`);
 
 app.use(cors());
 app.use(express.json());
 
-function readData() {
-  if (!fs.existsSync(DATA_FILE)) return [];
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+function isStrongPassword(password) {
+  return typeof password === "string" &&
+    password.length >= 8 &&
+    /[a-z]/.test(password) &&
+    /[A-Z]/.test(password) &&
+    /[0-9]/.test(password);
 }
 
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+const ALLOWED_EMAIL_DOMAINS = ["gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "icloud.com"];
+
+function isValidEmail(email) {
+  if (typeof email !== "string") return false;
+  const match = email.trim().toLowerCase().match(/^[^\s@]+@([^\s@]+\.[^\s@]+)$/);
+  if (!match) return false;
+  const domain = match[1];
+  return ALLOWED_EMAIL_DOMAINS.includes(domain);
+}
+
+function auth(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header) return res.status(401).json({ error: "Missing token" });
+  const token = header.replace("Bearer ", "");
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.userId = payload.userId;
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid or expired token" });
+  }
 }
 
 app.get("/", (req, res) => res.send("Job tracker API is running"));
 
-// List all
-app.get("/api/applications", (req, res) => {
-  res.json(readData());
+app.post("/api/auth/signup", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "email and password are required" });
+  }
+    if (!isValidEmail(email)) {
+    return res.status(400).json({ error: "please use a valid Gmail, Hotmail, Outlook, Yahoo, or iCloud address" });
+  }
+   if (!isStrongPassword(password)) {
+    return res.status(400).json({ error: "password must be at least 8 characters and include an uppercase letter, a lowercase letter, and a number" });
+  }
+  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+  if (existing) {
+    return res.status(409).json({ error: "An account with that email already exists" });
+  }
+  const passwordHash = await bcrypt.hash(password, 12);
+  const user = {
+    id: Date.now().toString(),
+    email,
+    passwordHash,
+    createdAt: new Date().toISOString(),
+  };
+  db.prepare("INSERT INTO users (id, email, passwordHash, createdAt) VALUES (?, ?, ?, ?)")
+    .run(user.id, user.email, user.passwordHash, user.createdAt);
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "7d" });
+  res.status(201).json({ token, email: user.email });
 });
 
-// Add one
-app.post("/api/applications", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+  if (!user) return res.status(401).json({ error: "Invalid email or password" });
+  const valid = await bcrypt.compare(password, user.passwordHash);
+  if (!valid) return res.status(401).json({ error: "Invalid email or password" });
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "7d" });
+  res.json({ token, email: user.email });
+});
+
+app.get("/api/applications", auth, (req, res) => {
+  const rows = db.prepare("SELECT * FROM applications WHERE userId = ? ORDER BY dateApplied DESC").all(req.userId);
+  res.json(rows);
+});
+
+app.post("/api/applications", auth, (req, res) => {
   const { company, role } = req.body;
   if (!company || !role) {
     return res.status(400).json({ error: "company and role are required" });
   }
-  const applications = readData();
   const newApp = {
     id: Date.now().toString(),
+    userId: req.userId,
     company,
     role,
     link: req.body.link || "",
@@ -47,29 +136,28 @@ app.post("/api/applications", (req, res) => {
     cvVersion: req.body.cvVersion || "",
     notes: req.body.notes || "",
   };
-  applications.push(newApp);
-  writeData(applications);
+  db.prepare(`
+    INSERT INTO applications (id, userId, company, role, link, source, dateApplied, status, nextStep, nextStepDate, contact, cvVersion, notes)
+    VALUES (@id, @userId, @company, @role, @link, @source, @dateApplied, @status, @nextStep, @nextStepDate, @contact, @cvVersion, @notes)
+  `).run(newApp);
   res.status(201).json(newApp);
 });
 
-// Update one
-app.put("/api/applications/:id", (req, res) => {
-  const applications = readData();
-  const index = applications.findIndex((a) => a.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Not found" });
-  applications[index] = { ...applications[index], ...req.body, id: req.params.id };
-  writeData(applications);
-  res.json(applications[index]);
+app.put("/api/applications/:id", auth, (req, res) => {
+  const existing = db.prepare("SELECT * FROM applications WHERE id = ? AND userId = ?").get(req.params.id, req.userId);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const updated = { ...existing, ...req.body, id: req.params.id, userId: req.userId };
+  db.prepare(`
+    UPDATE applications SET company=@company, role=@role, link=@link, source=@source,
+      dateApplied=@dateApplied, status=@status, nextStep=@nextStep, nextStepDate=@nextStepDate,
+      contact=@contact, cvVersion=@cvVersion, notes=@notes WHERE id=@id AND userId=@userId
+  `).run(updated);
+  res.json(updated);
 });
 
-// Delete one
-app.delete("/api/applications/:id", (req, res) => {
-  const applications = readData();
-  const filtered = applications.filter((a) => a.id !== req.params.id);
-  if (filtered.length === applications.length) {
-    return res.status(404).json({ error: "Not found" });
-  }
-  writeData(filtered);
+app.delete("/api/applications/:id", auth, (req, res) => {
+  const result = db.prepare("DELETE FROM applications WHERE id = ? AND userId = ?").run(req.params.id, req.userId);
+  if (result.changes === 0) return res.status(404).json({ error: "Not found" });
   res.json({ deleted: req.params.id });
 });
 
