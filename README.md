@@ -1,4 +1,4 @@
-# Job Application Tracker - https://vbockaj.github.io/job-tracker/
+# Job Application Tracker 
 
 A simple web app for tracking job applications - company, role, status, and next steps.
 
